@@ -11,7 +11,11 @@ import { AttendeesService } from "../attendees/attendees.service";
 import { EventsService } from "../events/events.service";
 import { TeamsService } from "../teams/teams.service";
 import {
-    AttendeeAlreadyExistException, GodParentAlreadyExist, InvalidCodeException, MaxTeamMemberException, TeamAlreadyExistException,
+    AttendeeAlreadyExistException,
+    GodParentAlreadyExist,
+    InvalidCodeException,
+    MaxTeamMemberException,
+    TeamAlreadyExistException,
     TeamDoesntExistException
 } from "./registration.exception";
 import { CreateRegistrationDto, RegisterAttendeeDto, RegisterRoleDto } from "./registrations.dto";
@@ -37,25 +41,34 @@ export class RegistrationsService {
     }
 
     public async create(dto: CreateRegistrationDto, role: string, eventId: string) {
-        const att = await this.attendeeService.findOne({ email: dto.email });
-        if (att) {
-            throw new AttendeeAlreadyExistException();
-        }
-
         if (dto.role !== "sponsor") {
             await this.validateTeam(dto.teamName, dto.role, eventId);
         }
-        const attendee = await this.attendeeService.create({
-            email: dto.email.toLowerCase(),
-            firstName: dto.firstName,
-            lastName: dto.lastName
-        });
+        let attendee = await this.attendeeService.findOne({email: dto.email});
+        let url;
+        if (attendee) {
+            const event = await this.eventService.findOne({
+                _id: eventId,
+                "attendees.attendee": attendee._id
+            });
+            if (event) {
+                throw new AttendeeAlreadyExistException();
+            }
+            url = this.configService.registration.loginUrl;
+        } else {
+            attendee = await this.attendeeService.create({
+                email: dto.email.toLowerCase(),
+                firstName: dto.firstName,
+                lastName: dto.lastName
+            });
 
-        let registration = new this.registrationsModel({
-            attendee: attendee._id,
-            role: dto.role
-        });
-        registration = await registration.save();
+            let registration = new this.registrationsModel({
+                attendee: attendee._id,
+                role: dto.role
+            });
+            registration = await registration.save();
+            url = `${this.configService.registration.registrationUrl}${registration.uuid}`;
+        }
 
         if (dto.role === "sponsor") {
             await this.addSponsor(dto, role, eventId, attendee);
@@ -67,7 +80,7 @@ export class RegistrationsService {
 
         const template = this.roleTemplate[dto.role];
         if (!template) {
-            return registration;
+            return;
         }
 
         try {
@@ -80,7 +93,7 @@ export class RegistrationsService {
                 template: template,
                 variables: {
                     name: dto.firstName,
-                    url: `${this.configService.registration.registrationUrl}${registration.uuid}`,
+                    url,
                     team: dto.teamName
                 }
             });
@@ -91,8 +104,6 @@ export class RegistrationsService {
 
             throw new InternalServerErrorException(e);
         }
-
-        return registration;
     }
 
     public async registerAttendee(userDto: RegisterAttendeeDto) {
@@ -183,7 +194,7 @@ export class RegistrationsService {
     }
 
     private async validateTeam(name: string, role: string, eventId: string) {
-        const team = await this.teamsService.findOne({ name: name, event: eventId });
+        const team = await this.teamsService.findOne({name: name, event: eventId});
         if (role === "captain") {
             if (team) {
                 throw new TeamAlreadyExistException();
@@ -197,7 +208,7 @@ export class RegistrationsService {
             throw new MaxTeamMemberException();
         }
 
-        const event = await this.eventService.findOne({ _id: eventId });
+        const event = await this.eventService.findOne({_id: eventId});
         const attendeeIds = team.attendees.map(x => (x as mongoose.Types.ObjectId).toHexString());
         const members = event.attendees.filter(attendeeEvent => attendeeIds
             .includes((attendeeEvent.attendee as mongoose.Types.ObjectId).toHexString()));
@@ -227,7 +238,7 @@ export class RegistrationsService {
                 showOnScoreboard: dto.showOnScoreboard
             });
         } else {
-            await this.teamsService.update({ name: dto.teamName, event: eventId }, {
+            await this.teamsService.update({name: dto.teamName, event: eventId}, {
                 $push: {
                     attendees: attendee._id
                 }
@@ -251,7 +262,7 @@ export class RegistrationsService {
                 showOnScoreboard: dto.showOnScoreboard
             });
         } else {
-            await this.teamsService.update({ sponsor: dto.sponsorId, event: eventId }, {
+            await this.teamsService.update({sponsor: dto.sponsorId, event: eventId}, {
                 $push: {
                     attendees: attendee._id
                 }
