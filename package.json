@@ -24,7 +24,7 @@
     "test": "mocha -r ts-node/register src/**/*.spec.ts"
   },
   "dependencies": {
-    "@nestjs/common": "5.4.0",
+    "@nestjs/common": "7.6.5",
     "@nestjs/core": "5.4.0",
     "@nestjs/microservices": "5.4.0",
     "@nestjs/mongoose": "^5.2.2",
